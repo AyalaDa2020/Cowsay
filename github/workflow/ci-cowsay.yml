@@ -1,0 +1,65 @@
+name: ci-cowsay
+
+on: [push, workflow_dispatch]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # נדרש רק אם תפרסמי ל-ECR עם OIDC
+    env:
+      IMAGE_NAME: cowsay
+      IMAGE_TAG: ${{ github.sha }}
+      TEST_TEXT: "CI is green"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Build & Package
+      - name: Build image
+        run: |
+          docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+
+      # Run & Test (Smoke)
+      - name: Smoke test
+        run: |
+          out=$(docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} cowsay "${TEST_TEXT}" || true)
+          echo "$out" | grep -q "${TEST_TEXT}"
+
+      - name: Package (save image as artifact)
+        run: docker save ${IMAGE_NAME}:${IMAGE_TAG} | gzip > image.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${ { env.IMAGE_NAME } }-image
+          path: image.tar.gz
+          retention-days: 7
+
+      # Publish to Docker Hub (רק אם יש סודות וגם רק על main)
+      - name: Login & push to Docker Hub
+        if: ${{ github.ref == 'refs/heads/main' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker tag ${IMAGE_NAME}:${IMAGE_TAG} "${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest"
+          docker push "${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest"
+
+      # Publish to ECR (רק אם יש סודות וגם רק על main)
+      - name: Configure AWS (OIDC)
+        if: ${{ github.ref == 'refs/heads/main' && secrets.AWS_REGION != '' && secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Login & push to ECR
+        if: ${{ github.ref == 'refs/heads/main' && secrets.AWS_ACCOUNT_ID != '' && secrets.AWS_REGION != '' && secrets.AWS_ROLE_TO_ASSUME != '' }}
+        run: |
+          REPO=${IMAGE_NAME}
+          aws ecr describe-repositories --repository-names "$REPO" >/dev/null 2>&1 || aws ecr create-repository --repository-name "$REPO" >/dev/null
+          REG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin "$REG"
+          docker tag ${IMAGE_NAME}:${IMAGE_TAG} "$REG/${REPO}:latest"
+          docker push "$REG/${REPO}:latest"
