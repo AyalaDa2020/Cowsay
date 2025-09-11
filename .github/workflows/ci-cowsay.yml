@@ -25,6 +25,12 @@ jobs:
       - name: Build image
         run: docker build -t $IMAGE_NAME:$TAG -t $IMAGE_NAME:latest .
 
+      - name: Inspect image config
+        run: | 
+          docker image inspect "$IMAGE_NAME:$TAG" \
+          --format 'Entrypoint: {{json .Config.Entrypoint}}  Cmd: {{json .Config.Cmd}}'
+
+
       # Run & Test (Smoke)
       - name: Smoke test
         run: |
