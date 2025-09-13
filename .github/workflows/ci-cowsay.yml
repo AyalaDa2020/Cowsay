@@ -69,6 +69,10 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN:   ${{ secrets.DOCKERHUB_TOKEN }}
+<<<<<<< HEAD
+=======
+    if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+>>>>>>> 65135458dbb764f76e33ef89ff8551e4517f6fd2
     steps:
       - name: Download image artifact
         uses: actions/download-artifact@v4
@@ -78,16 +82,26 @@ jobs:
       - name: Load image
         run: docker load -i image.tar
 
+<<<<<<< HEAD
       - name: Login to Docker Hub (skip if no secrets)
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
 
       - name: Tag & Push :latest
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+=======
+      - name: Login to Docker Hub
+        run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Tag & Push :latest
+>>>>>>> 65135458dbb764f76e33ef89ff8551e4517f6fd2
         run: |
           docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKERHUB_USERNAME/$IMAGE_NAME:latest"
           docker push "$DOCKERHUB_USERNAME/$IMAGE_NAME:latest"
 
       - name: Verify published image (manifest)
+<<<<<<< HEAD
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+=======
+>>>>>>> 65135458dbb764f76e33ef89ff8551e4517f6fd2
         run: docker manifest inspect "$DOCKERHUB_USERNAME/$IMAGE_NAME:latest" >/dev/null
