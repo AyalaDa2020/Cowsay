@@ -11,13 +11,18 @@ jobs:
     name: Build & Package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Build image
         run: docker build -t "$IMAGE_NAME:$IMAGE_TAG" .
+
       - name: Verify image exists
         run: docker image inspect "$IMAGE_NAME:$IMAGE_TAG" >/dev/null
+
       - name: Save image as artifact
         run: docker save "$IMAGE_NAME:$IMAGE_TAG" -o image.tar
+
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
@@ -30,21 +35,28 @@ jobs:
     needs: build_and_package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: image-tar }
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tar
+
       - name: Load image
         run: docker load -i image.tar
+
       - name: Start container
         run: |
           CID=$(docker run -d -e PORT="$PORT" -p "$PORT:$PORT" "$IMAGE_NAME:$IMAGE_TAG")
           echo "$CID" > cid.txt
+
       - name: Wait for app to be ready (sleep)
         run: sleep 5
+
       - name: Health check with curl
         run: |
           set -euo pipefail
           curl -fsS "http://127.0.0.1:${PORT}/" | tee /tmp/out.txt
           test -s /tmp/out.txt
+
       - name: Stop container
         if: always()
         run: |
@@ -59,18 +71,24 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN:   ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: image-tar }
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tar
+
       - name: Load image
         run: docker load -i image.tar
+
       - name: Login to Docker Hub (skip if no secrets)
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         run: echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
       - name: Tag & Push :latest
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         run: |
           docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKERHUB_USERNAME/$IMAGE_NAME:latest"
           docker push "$DOCKERHUB_USERNAME/$IMAGE_NAME:latest"
+
       - name: Verify published image (manifest)
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         run: docker manifest inspect "$DOCKERHUB_USERNAME/$IMAGE_NAME:latest" >/dev/null
@@ -81,14 +99,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write        # OIDC
+      id-token: write
     env:
       AWS_ACCOUNT_ID:     ${{ secrets.AWS_ACCOUNT_ID }}
       AWS_REGION:         ${{ secrets.AWS_REGION }}
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: image-tar }
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tar
+
       - name: Load image
         run: docker load -i image.tar
 
@@ -103,8 +124,8 @@ jobs:
         if: ${{ env.AWS_REGION != '' && env.AWS_ACCOUNT_ID != '' && env.AWS_ROLE_TO_ASSUME != '' }}
         run: |
           REG="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-          aws ecr describe-repositories --repository-names "$IMAGE_NAME" >/dev/null 2>&1 \
-            || aws ecr create-repository --repository-name "$IMAGE_NAME" >/dev/null
+          aws ecr describe-repositories --repository-names "$IMAGE_NAME" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "$IMAGE_NAME" >/dev/null
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "$REG"
 
@@ -116,3 +137,5 @@ jobs:
           docker push "$REG/$IMAGE_NAME:latest"
 
       - name: Verify published image (ECR)
+        if: ${{ env.AWS_REGION != '' && env.AWS_ACCOUNT_ID != '' && env.AWS_ROLE_TO_ASSUME != '' }}
+        run: aws ecr describe-images --repository-name "$IMAGE_NAME" --image-ids imageTag=latest >/dev/null
